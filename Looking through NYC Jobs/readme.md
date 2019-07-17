@@ -14,5 +14,8 @@ With the analysis, I try to answer the following questions:
 
 ## Result
 
-The result of analysis can be found in the html file "r_notebook.html"
+The result of analysis can be found in the html file "r_notebook.html".
+
 The graphs and any other generated data is stored in output folder.
+
+![Map Image](/output/map.jpeg)
