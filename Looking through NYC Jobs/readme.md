@@ -18,4 +18,6 @@ The result of analysis can be found in the html file "r_notebook.html".
 
 The graphs and any other generated data is stored in output folder.
 
-![Map Image](/output/map.jpeg)
+One of the interesting thing was that high paying jobs are not as distributed as low paying jobs across NY city.
+
+![Map Image](./output/map.jpeg)
