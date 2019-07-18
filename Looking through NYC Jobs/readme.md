@@ -18,6 +18,15 @@ The result of analysis can be found in the html file "r_notebook.html".
 
 The graphs and any other generated data is stored in output folder.
 
-One of the interesting thing was that high paying jobs are not as distributed as low paying jobs across NY city.
+1.  Most of the jobs fall in the bracket of (50k, 100k)$.
+![box_plot](./output/jobs_salary.jpeg)
+
+2.  For both low and high paying jobs, experience seems to be the most important required qualification.
+
+![high_salary_job](./output/skill_req_highsalary.jpeg)
+
+![low_salary_job](./output/skill_req_lowsalary.jpeg)
+
+3.  One of the interesting thing was that high paying jobs are not as distributed as low paying jobs across NY city.
 
 ![Map Image](./output/map.jpeg)
