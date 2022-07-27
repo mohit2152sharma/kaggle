@@ -1,0 +1,132 @@
+---
+title: "GitHub Code Snippets"
+author: "Mohit"
+date: "06/06/2021"
+params:
+  is_running_local: true
+output: 
+  html_document:
+    number_sections: true
+    toc: true
+    css: "../styles.css"
+---
+
+```{r knitr-global-options}
+#setting up global knit options
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+# Introduction
+
+The dataset for this notebook comes from another notebook
+([link](https://www.kaggle.com/mohit2512/github-code-snippets-eda)). The
+original dataset is very big (rougly 60 GB), hence the aforementioned
+notebook selects a subset of data. There are two datasets included with
+the notebook:
+
+1.  One dataset is created using stratified sampling, ensuring that
+    observations of each language are selected are according to their
+    proportion in the entire dataset.
+2.  The other dataset selects observations in a way that it ensures that
+    each language has equal proportion in the subset.
+
+The goal of this exercise is to build a model which predicts the
+language from a code snippet. To understand the dataset and code
+snippets further, I will also do the term frequency analysis. This
+analysis will highlight the most common word used in snippets of
+particular language.
+
+```{r load-data}
+#check if the script is running locally or on kaggle
+#by checking if locally named file exists in directory
+
+
+
+if(params$is_running_local){
+  df_equal_prop = data.table::fread("./github-code-snippets/input/sample_equal_prop_local.csv")
+  df_strat = data.table::fread("./github-code-snippets/input/sample_stratified_local.csv")
+  
+  print('data loaded successfully')
+  
+}else{
+  df_equal_prop = data.table::fread("../input/github-code-snippets-eda/sample_equal_prop.csv")
+  df_strat = data.table::fread("../input/github-code-snippets-eda/sample_stratified.csv")
+  
+  print('data loaded successfully')
+  
+}
+
+```
+
+# Term Frequencies
+
+Analyzing word frequencies across languages
+
+[methodology-explaination]{.todo}
+
+```{r packages, echo=FALSE}
+
+packages = c(
+  "tidytext",
+  "tidyverse",
+  "data.table"
+)
+
+loader = function(x) if(!require(x, character.only = TRUE)){
+  install.packages(x, character.only=TRUE)
+  library(x)
+  return(TRUE)
+}
+
+sapply(packages, loader)
+```
+
+```{r tokenizers}
+
+(n_langs = length(unique(df_equal_prop$language)))
+(n_langs2 = length(unique(df_strat$language)))
+
+eq_df_words = df_equal_prop %>% 
+  unnest_tokens("word", snippet, strip_punct = FALSE)
+
+eq_strat_words = df_strat %>% 
+  unnest_tokens("word", snippet, strip_punct = FALSE)
+
+```
+
+```{r plot_word_freq}
+
+count_words = function(tble) {
+  tble %>% 
+    count(language, word, sort=TRUE, name="count")
+}
+
+plot_words_by_lang = function(tble, title, xcol=word, ycol=count) {
+  
+  # xcol = sym(xcol)
+  # ycol = sym(ycol)
+  # facet_col = sym(facet_col)
+  tble %>% 
+    ggplot(aes(x={{xcol}}, y={{ycol}})) +
+    geom_col() +
+    coord_flip() +
+    facet_wrap(~ language) +
+    labs(title=title)
+}
+
+```
+
+
+```{r freq_plots}
+
+count_eq_df_words = count_words(eq_df_words)
+
+
+count_eq_df_words %>% 
+  group_by(language) %>% 
+  slice_head(n=6) %>% 
+  ungroup() %>% 
+  plot_words_by_lang(title="equal prop")
+
+```
+

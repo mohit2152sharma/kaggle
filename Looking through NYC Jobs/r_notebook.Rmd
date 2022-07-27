@@ -1,0 +1,305 @@
+---
+title: "Looking through NYC Jobs"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+In this notebook, we will look through the job postings available on the City of New York’s official jobs site. With this analysis, we would like to answer questions like, what type of jobs get posted, what's the salary variation etc.
+
+Required Packages
+```{r packages_required, warning=FALSE, message=FALSE}
+library(readxl) #reading csv files
+library(tidyverse) #metapackage for plotting and data manipulation
+library(magrittr) #pipe operator
+library(tm) #for text mining
+library(SnowballC) #for stemming
+library(wordcloud) #for plotting wordcloud
+library(RColorBrewer) #for color pallette
+library(ggmap) #for getting geocodes 
+library(leaflet) #for plotting map
+
+```
+Custom Functions
+```{r custom_functions, message=FALSE, warning=FALSE}
+
+graph_save = function(title){
+  ggsave(title, path = './output', device = 'jpeg')
+}
+
+text_operation = function(text_vector, words_to_remove){
+  corpus = Corpus(VectorSource(text_vector))
+  cleaned_data = corpus %>% tm_map(., stripWhitespace) %>% tm_map(., tolower) %>% 
+    tm_map(., removePunctuation) %>% tm_map(., removeNumbers) %>% tm_map(., removeWords, stopwords("en"))
+  
+  if(missing(words_to_remove)){
+    return(cleaned_data)
+  }else{
+    cleaned_data = tm_map(cleaned_data, removeWords, words_to_remove)
+    return(cleaned_data)
+  }
+}
+
+```
+
+
+Importing dataset
+```{r import, warning=FALSE, message=FALSE}
+nyc_jobs = read_csv('./input/nyc-jobs.csv')
+glimpse(nyc_jobs)
+```
+
+Looking at the dataset, we can answer the following question:
+
+1.  Which agency has posted the maximum number of jobs?
+
+2.  Which agency has posted highest salary and which agency has posted lowest salary?
+
+3.  What is the minimum qualification required for highest salary job and lowest salary job?
+
+4.  Where are the highest salary jobs located or concentrated?
+
+With time, if any new question pops in mind, I will add to the list
+
+
+Let's start answering:
+
+1.  Which agency has posted the maximum number of jobs?
+
+```{r agency_posting, message=FALSE, warning=FALSE}
+
+data = nyc_jobs %>% group_by(Agency) %>% summarize(n()) %>% set_colnames(c("agency", "count"))
+
+ggplot(nyc_jobs, aes(x = Agency)) +
+  geom_bar(fill = 'steelblue') +
+  theme(axis.text.x = element_text(angle = 90, size = 5)) +
+  ggplot2::annotate('text',
+           x = as.numeric(which.max(data$count)),
+           y = as.numeric(data[which.max(data$count), 2]) + 20,
+           label = as.character(data[which.max(data$count),1]),
+           size = 2.5) +
+  labs(title = 'Postings by Agency')
+
+graph_save('agency_postings.jpeg')
+
+head(arrange(data, desc(count)))
+tail(arrange(data, desc(count)))
+
+```
+
+  1.1 Maximum number of posting are by Dept of Environment Protection.
+  
+  1.2 Minimum number of posting are by Manhattan community board #12, Teachers Retirement System.
+  
+As each posting might have more than one job openings, to calculate the number of job openings, posting must be multiplied by number of job openings.
+  
+```{r jobs, message=FALSE, warning=FALSE}
+
+total_jobs = sum(nyc_jobs$`# Of Positions`)
+total_jobs
+
+#number of jobs with respect to agency
+data = nyc_jobs %>% group_by(Agency) %>% summarize(sum(`# Of Positions`)) %>% 
+  set_colnames(c('agency', 'no_jobs')) %>% arrange(desc(no_jobs))
+
+ggplot(data, aes(x = agency, y = no_jobs)) +
+  geom_bar(fill = 'steelblue', stat = 'identity') +
+  theme(axis.text.x = element_text(angle = 90, size = 5))
+
+graph_save('agency_jobs.jpeg')
+
+head(data)
+tail(data)
+
+```
+  
+  1.3 Maximum number of jobs are from Dept of Environment Protection. 
+  
+  1.4 Minimum number of jobs are from Teachs Retirement System.
+  
+2.  Which agency has posted highest salary and which agency has posted lowest salary?
+
+The dataset contains the range of salary, as a conservative estimate of salary we can replace that range by the median of range.
+
+```{r salary, message=FALSE, warning=FALSE}
+
+#converting salary on hourly scale to annual scale and daily scale to yearly scale
+#no of working days in US in a year: 261 source: https://hr.uiowa.edu/payroll/2019-fiscal-year-payroll-calendar
+#no of working hours in US in a day: 8.4 hours source: Wikipedia
+
+nyc_jobs = nyc_jobs %>% mutate(salary = if_else( `Salary Frequency` == "Annual", round((`Salary Range From` + `Salary Range To`)/2,2),
+                                 if_else(`Salary Frequency` == "Daily", round((`Salary Range From` + `Salary Range To`)*261/2,2),
+                                         round((`Salary Range From` + `Salary Range To`)*261*8.4/2,2))
+                                 )
+                               )
+
+ggplot(nyc_jobs, aes(x = Agency, y = salary)) +
+  geom_boxplot() +
+  labs(title = "Jobs salary") +
+  theme(axis.text.x = element_text(angle = 90, size = 5))
+
+graph_save('jobs_salary.jpeg')
+
+```
+
+  2.1 Most of the jobs seem to lie between the bracked (50k, 100k).
+  
+  2.2 Top five jobs with highest and lowest salary and posted by the agency:
+  
+  
+```{r highest_agency, message=FALSE, warning=FALSE}
+
+nyc_jobs %>% arrange(desc(salary)) %>% select(Agency, `Business Title`, salary) %>% unique() %>% head()
+nyc_jobs %>% arrange(desc(salary)) %>% select(Agency, `Business Title`, salary) %>% unique() %>% tail()
+
+```
+  
+3.  What are the required qualification and skillset for the highest salary?
+
+  3.1 Minimum qualification required for high paying jobs, let's say jobs whose annual salary is greater than 100k
+  
+```{r quf_highsalary, message=FALSE, warning=FALSE}
+
+high_salary_job = nyc_jobs %>% filter(salary >= 100000)
+
+#preparing the word matrix
+highsalary_reqskills = text_operation(high_salary_job$`Minimum Qual Requirements`)
+
+word_matrix = as.matrix(TermDocumentMatrix(highsalary_reqskills))
+summary = data.frame(sort(rowSums(word_matrix), decreasing = TRUE))
+summary = data.frame(words = row.names(summary),frequency =  summary[,1], row.names = NULL)
+summary$words = factor(summary$words, levels = summary$words[order(summary$frequency, decreasing = TRUE)])
+
+#looking at the summary following words should to be removed
+remove_words = c('must', 'andor', 'approved', 'may', 'related', 'areas', 'however', 'will', 'maximum', 'including', 'equivalent', 'york', 'substituted', 'large',
+                  'six', 'two', 'least', 'valid', 'requirements', 'five', 'three', 'fouryear', 'months', 'years', 'year', 'described', 'satisfactory',
+                 'one', 'four', 'new', 'â€œâ€')
+
+highsalary_reqskills = text_operation(text_vector = high_salary_job$`Minimum Qual Requirements`, words_to_remove = remove_words)
+
+#Plotting frequency plot
+ggplot(summary[1:50, ], aes(words, frequency)) +
+  geom_bar(fill = 'steelblue', stat = 'identity') +
+  theme(axis.text.x = element_text(angle = 90, size = 7, vjust = 0.5)) +
+  labs(title = 'High Salary Job Minimum Skill Requirement')
+graph_save('skill_req_highsalary_freqplot.jpeg')
+
+#plotting wordcloud
+layout(matrix(c(1, 2), nrow=2), heights=c(1, 5))
+par(mar=rep(0, 4))
+plot.new()
+text(x=0.5, y=0.5, "High Salary Job Minimum Skill Requirement")
+wordcloud(highsalary_reqskills, scale = c(3, 0.5), max.words = 100, min.freq = 100, random.order = FALSE, use.r.layout = TRUE, 
+          colors = brewer.pal(8, "Dark2"))
+graph_save('skill_req_highsalary.jpeg')
+
+```
+
+  3.2 Minimum qualification required for low paying jobs, let's say jobs whose annual salary is less than 50K
+  
+```{r quf_lowsalary, message=FALSE, warning=FALSE}
+
+low_salary_job = nyc_jobs %>% filter(salary <= 50000)
+
+lowsalary_reqskills = text_operation(low_salary_job$`Minimum Qual Requirements`)
+
+word_matrix = as.matrix(TermDocumentMatrix(lowsalary_reqskills))
+summary = data.frame(sort(rowSums(word_matrix), decreasing = TRUE))
+summary = data.frame(words = row.names(summary),frequency =  summary[,1], row.names = NULL)
+summary$words = factor(summary$words, levels = summary$words[order(summary$frequency, decreasing = TRUE)])
+
+#looking at the summary following words should to be removed
+remove_words = c('must', 'andor', 'approved', 'may', 'related', 'areas', 'however', 'will', 'maximum', 'including', 'equivalent', 'york', 'substituted', 'large',
+                  'six', 'two', 'least', 'valid', 'requirements', 'five', 'three', 'fouryear', 'months', 'years', 'year', 'described', 'satisfactory',
+                 'one', 'four', 'new', 'â€œâ€')
+lowsalary_reqskills = text_operation(text_vector = low_salary_job$`Minimum Qual Requirements`, words_to_remove = remove_words)
+
+#plotting frequency plot
+ggplot(summary[1:50, ], aes(words, frequency)) +
+  geom_bar(fill = 'steelblue', stat = 'identity') +
+  theme(axis.text.x = element_text(angle = 90, size = 7, vjust = 0.5)) +
+  labs(title = 'Low Salary Job Minimum Skill Requirement')
+graph_save('skill_req_lowsalary_freqplot.jpeg')
+
+#plotting wordcloud
+layout(matrix(c(1, 2), nrow=2), heights=c(1, 5))
+par(mar=rep(0, 4))
+plot.new()
+text(x=0.5, y=0.5, "Low Salary Job Minimum Skill Requirement")
+wordcloud(lowsalary_reqskills, scale = c(3, 0.5), max.words = 200, min.freq = 100, random.order = FALSE, use.r.layout = TRUE, 
+          colors = brewer.pal(8, "Dark2"))
+graph_save('skill_req_lowsalary.jpeg')
+
+```
+
+4.  Where are the high paying jobs located?
+
+```{r geocodes_highjob, message=FALSE, warning=FALSE, eval=FALSE}
+
+high_salary_job = nyc_jobs %>% filter(salary >= 100000)
+
+#geocode won't work without google api key
+
+for(i in 1:nrow(high_salary_job)){
+  result = geocode(high_salary_job$`Work Location`[i], source = 'google', output = 'latlona')
+  if(!is.na(result[1])){
+    high_salary_job$longitude[i] = as.numeric(result[1])
+    high_salary_job$latitude[i] = as.numeric(result[2])
+    high_salary_job$address[i] = as.character(result[3])
+  }else{
+    high_salary_job$latitude[i] = NA
+    high_salary_job$longitude[i] = NA
+    high_salary_job$address[i] = NA
+  }
+}
+
+#writing to csv file, to prevent hitting google apis for coordinates, rather use this csv file
+write_csv(high_salary_job, './output/high_salary_geocodes.csv')
+
+```
+
+```{r geocodes_lowjob, message=FALSE, warning=FALSE, eval=FALSE}
+low_salary_job = nyc_jobs %>% filter(salary <=  50000)
+
+#geocode won't work without google api key
+
+for(i in 1:nrow(low_salary_job)){
+  result = geocode(low_salary_job$`Work Location`[i], source = 'google', output = 'latlona')
+  if(!is.na(result[1])){
+    low_salary_job$longitude[i] = as.numeric(result[1])
+    low_salary_job$latitude[i] = as.numeric(result[2])
+    low_salary_job$address[i] = as.character(result[3])
+  }else{
+    low_salary_job$latitude[i] = NA
+    low_salary_job$longitude[i] = NA
+    low_salary_job$address[i] = NA
+  }
+}
+
+#writing to csv file, to prevent hitting google apis for coordinates, rather use this csv file
+write_csv(low_salary_job, './output/low_salary_geocodes.csv')
+```
+
+```{r location_highjob, warning = FALSE, message=FALSE}
+
+high_salary_geocodes = read_csv('./output/high_salary_geocodes.csv')
+low_salary_geocodes = read_csv('./output/low_salary_geocodes.csv')
+
+#removing values for which there were no coordinates
+high_salary_geocodes = high_salary_geocodes[-which(is.na(high_salary_geocodes$latitude)), ]
+low_salary_geocodes = low_salary_geocodes[-which(is.na(low_salary_geocodes$latitude)), ]
+
+#add custom color column
+high_salary_geocodes$color = rep('Blue', nrow(high_salary_geocodes))
+low_salary_geocodes$color = rep('Red', nrow(low_salary_geocodes))
+
+salary_geocodes = rbind(high_salary_geocodes, low_salary_geocodes)
+
+map = salary_geocodes %>% select('latitude', 'longitude', 'address', 'color') %>% leaflet(data = .) %>% setView(lat = 40.7128, lng = -74.0060, zoom = 10) %>%
+  addTiles() %>% addCircleMarkers(lng = ~longitude, lat = ~latitude, radius = 3, color = ~color)
+
+map
+
+```
+
+  4.1 High paying jobs are not as distributed as low paying jobs over New York.
