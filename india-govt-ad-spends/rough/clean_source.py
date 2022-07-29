@@ -3,6 +3,7 @@ import pandas as pd
 
 def concat_df(dflist):
     cols = dflist[0].columns
+    # check if first row is empty or not
     dfs = []
     for df in dflist:
         df.columns = cols
