@@ -1,0 +1,117 @@
+
+In a recent question in LokSabha Session, Indian government was asked about their media spends. The government has provided the details of total expenditure incurred by government on advertisements in newspapers, tv, magazines and digital media. 
+
+The question detail can be found [here](http://164.100.47.194/Loksabha/Questions/QResult15.aspx?qref=20473&lsno=17).
+
+The answer to the question was uploaded on Bureau of Outreach and Communication’s website i.e. www.davp.nic.in and can be found [here](http://www.davp.nic.in/writereaddata/Lok_Sabha_Question_No_2053.pdf).
+
+The data provided is in pdf format and it's been converted into csv format to ease the analysis. The pdf file is split into three csv files containing data for newspaper spends, television spends and online media spends. The process of cleaning is detailed in [this](https://www.kaggle.com/code/mohit2512/india-govt-ad-spends-source-data/notebook) notebook.
+
+```{r pkgs, results="hide", warning=FALSE, message=FALSE}
+
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(magrittr)
+library(stringr)
+
+devtools::install_github("Mikata-Project/ggthemr", upgrade="never", quiet=TRUE)
+library(ggthemr)
+
+```
+
+
+```{r load-data}
+
+is_kaggle=TRUE
+if(is_kaggle) {
+  base_path = "../input/india-govt-ad-spends/"
+} else {
+  base_path = "./"
+}
+
+readcsv = function(filename) read.csv(paste0(base_path, filename), check.names=FALSE)
+
+news = readcsv("newspaper_ad_spends.csv")
+online = readcsv("online_ad_spends.csv")
+tv = readcsv("tv_ad_spends.csv")
+
+```
+
+
+## Online Spends
+
+In this section, I will analyse the online spends.
+
+```{r}
+
+head(online)
+
+```
+
+```{r}
+str(online)
+```
+1. The column names contain special character, which may make difficult to type, plus they are not syntatically valid for R. I will overwrite them with: `("sno", "agency_name", "2017", "2018", "2019")`
+2. The spends column are of `character` type and the `NAs` are represented by `"-"`. In addition to that, they contain `","`. The spends columns need to be changed to `numeric` type for analyses.
+3. There are total `r nrow(online)` online media where government has spend money over past three years.
+
+```{r online-clean}
+
+colnames(online) = c("sno", "agency_name", "2017", "2018", "2019")
+
+conv_to_num = function(col_vec) {
+  is.na(col_vec) = col_vec == "-"
+  col_vec = str_replace_all(col_vec, " ", "")
+  col_vec = str_replace_all(col_vec, ",", "")
+  as.numeric(col_vec)
+}
+
+online %<>% mutate(across(c("2017", "2018", "2019"), conv_to_num))
+
+```
+
+
+### Yearly Spends
+
+Over the years, has the government spend increased or decreased?
+
+
+```{r online-yearly-spends}
+
+ggthemr("dust")
+
+yearly_spend = function(tble) {
+  spend = tble %>% 
+    pivot_longer(c("2017", "2018", "2019"), names_to="year", values_to="amount") %>% 
+    group_by(year) %>% 
+    summarize(spends_in_mill = sum(amount, na.rm=TRUE)/1000000) %>% 
+    ungroup() %>% 
+    mutate(year = case_when(
+        year==2017 ~ "2017-2018",
+        year==2018 ~ "2018-2019",
+        year==2019 ~ "2019-2020"
+      ),
+      percent_change = round(((spends_in_mill - lag(spends_in_mill))/lag(spends_in_mill)), 3)*100,
+      
+      x1 = as.numeric(as.factor(year)),
+      xend = lead(x1),
+      y1 = spends_in_mill,
+      yend = lead(y1)
+    )
+  
+  
+  return(spend)
+}
+
+online_yearly_spend = yearly_spend(online)
+
+ggplot(online_yearly_spend, aes(x=year, y=spends_in_mill)) +
+  geom_bar(stat="identity") + 
+  ylim(c(0, max(online_yearly_spend$spends_in_mill))) + 
+  labs(title="Online Media Spends over the years", x="Year", y="Spends (in million Rupees)")
+
+```
+
+### To be continued
+
